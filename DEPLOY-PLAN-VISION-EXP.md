@@ -108,19 +108,40 @@ volumes:
 | engine | vLLM-dsv4flash（id=6，anemll 镜像） |
 | 部署模式 | cluster（双机 TP=2） |
 | 端口 | 4110 |
-| 状态 | `stop`（未启动） |
-| 健康检查 | `http://127.0.0.1:4110/health` |
+| 状态 | `running`（healthy，2026-09-01 确认） |
+| 健康检查 | `http://127.0.0.1:4110/health` → `healthy`（status_code 200） |
 | 访问地址 | `http://192.168.21.234:4110/v1` |
 | tags | `vision,cluster,dsv4`；`vision_enabled=1` |
 
-## 7. 当前状态与下一步
+## 7. 部署结果（2026-09-01 已成功运行）
 
-- ✅ 模型权重双机就绪（157G 扁平目录 + HF hub symlink）
-- ✅ 镜像双机就绪（NJU 镜像，digest 一致）
-- ✅ 部署目录与配置双机就绪、双端 compose 校验通过
-- ✅ 平台注册完成（id=20），模型管理页刷新可见
-- ⏳ **待启动**：由用户在模型管理页点「启动」按钮（平台调用 `start.sh` → 官方脚本，双机拉起，页面可看日志），或确认后代执行 `start.sh`
-- ⏳ 启动后监控 `logs.sh` 与 `:4110/health`、`:4110/v1/models`，确认 vision hotfix 生效、多模态推理可用
-- ⏳ 验证通过后在平台将模型标记为启用可用
+- ✅ 平台注册完成（模型 id=20，engine vLLM-dsv4flash，cluster，端口 4110）
+- ✅ 用户在模型管理页点「启动」后，双机容器拉起，vLLM 加载 157G 权重成功
+- ✅ 双机 TP=2 分布式建立（`world_size=2 backend=nccl`，rank 0/1）
+- ✅ `:4110/health` → **healthy**，平台状态 **running**
+- ✅ 访问地址 `http://192.168.21.234:4110/v1` 可用（`vllm` 进程监听 4110）
+- ✅ 日志查看：平台日志页 / `logs.sh`（head + worker 双节点聚合）
+
+## 8. 部署过程踩坑记录（重要）
+
+### 8.1 `LIMIT_MM_PER_PROMPT` 双引号被 env 文件解析吃掉 → vllm serve 直接退出
+
+**现象**：head 容器日志 `vllm serve: error: argument --limit-mm-per-prompt: Value {image:8} cannot be converted to <function loads ...>`
+
+**原因**：`.env.dspark` 写 `LIMIT_MM_PER_PROMPT={"image":8}`，docker compose 解析 env 文件时把双引号当**值定界符**移除，容器内实际拿到 `{image:8}`（非合法 JSON），vLLM CLI `json.loads` 失败。
+
+**解决**：改用 compose 内置简写 `LIMIT_MM_PER_PROMPT=image=8`，容器 entrypoint 自动渲染为合法 JSON `{"image":8}`（见 `docker-compose.dspark.yml` 的 `image=N` 分支）。
+
+**经验**：docker compose `--env-file` 的值里**不能依赖双引号**传递 JSON；能用官方简写就用简写。
+
+### 8.2 head 显存不足 → `Engine core initialization failed`（OOM）
+
+**现象**：`ValueError: Free memory on device cuda:0 (96.51/119.63 GiB) on startup is less than desired GPU memory utilization (0.835, 99.89 GiB)`
+
+**原因**：head GPU 被其他进程占用（`llama-server`/qwen3-5-08b 占 ~6.6 GiB 及其它保留 ~16.5 GiB），空闲 96.51 GiB < `GPU_MEMORY_UTILIZATION=0.835` 需要的 99.89 GiB，vLLM 拒绝启动；worker 端空闲充足所以正常。
+
+**解决**：释放 head GPU 显存（停掉占显存的服务/容器），保持官方 `0.835` 不动；或降低 `GPU_MEMORY_UTILIZATION`（需保证权重 + KV cache 装得下）。
+
+**经验**：DGX Spark（GB10）`nvidia-smi` 的 Memory-Usage 显示 **Not Supported**，总显存/空闲要以 vLLM 启动日志为准（`119.63 GiB`）；head 上若并行跑其他 GPU 服务需预留显存。
 
 > 注意：镜像拉取需直连 NJU 镜像站（本机 shell 无代理变量；docker daemon 配了全局代理，拉取需按需处理直连）。

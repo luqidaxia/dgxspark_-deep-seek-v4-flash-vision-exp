@@ -79,14 +79,18 @@ docker compose -p dsv4-vision-exp --env-file .env.dspark -f docker-compose.dspar
 > ⚠️ 镜像 `ghcr.nju.edu.cn/anemll/dspark-vllm-gx10:0.1.1` 需**直连** NJU 镜像站拉取
 > （本机 shell 无代理变量；docker daemon 配了全局代理，拉取时按需处理直连）。
 
-## 📌 当前状态
+## 📌 当前状态（2026-09-01 已成功运行）
 
 | 项目 | 状态 |
 |---|---|
 | 权重 / 镜像 / 免密 / 双端校验 | ✅ 就绪 |
 | 平台注册（模型 id=20，端口 4110） | ✅ 完成 |
-| 模型启动 | ⏳ 待用户确认（平台点「启动」或执行 `./start.sh`） |
-| 启动后验证（health / 多模态推理） | ⏳ 待启动后执行 |
+| 模型启动 | ✅ **running**（双机 TP=2 拉起成功） |
+| 健康检查 | ✅ `http://192.168.21.234:4110/health` → healthy |
+| 访问地址 | ✅ `http://192.168.21.234:4110/v1`（vLLM 监听 4110） |
+
+> 💡 部署过程踩坑（`LIMIT_MM_PER_PROMPT` 引号、head 显存不足）见
+> [DEPLOY-PLAN-VISION-EXP.md](./DEPLOY-PLAN-VISION-EXP.md) 第 8 节。
 
 ## 🔗 相关
 
