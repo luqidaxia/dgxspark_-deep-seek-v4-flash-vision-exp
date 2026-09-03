@@ -101,6 +101,10 @@ volumes:
 
 ## 6. 平台注册信息（已完成）
 
+> 操作入口：模型管理页（`#model-manage`）→ **推理引擎管理**（`vLLM-dsv4flash`，镜像
+> `ghcr.nju.edu.cn/anemll/dspark-vllm-gx10:0.1.1`）→ **模型实例管理**（添加模型，字段见下表；
+> 完整操作步骤见仓库 README「🖥 在平台 #model-manage 加载」）。
+
 | 项 | 值 |
 |---|---|
 | 模型 ID | 20 |

@@ -79,6 +79,41 @@ docker compose -p dsv4-vision-exp --env-file .env.dspark -f docker-compose.dspar
 > ⚠️ 镜像 `ghcr.nju.edu.cn/anemll/dspark-vllm-gx10:0.1.1` 需**直连** NJU 镜像站拉取
 > （本机 shell 无代理变量；docker daemon 配了全局代理，拉取时按需处理直连）。
 
+## 🖥 在平台 `#model-manage` 加载（平台跑通经验）
+
+在 Lexdata-AI-Platform 模型管理页（`http://192.168.21.234:8889/#model-manage`）直接加载该模型（本次实际跑通方式）：
+
+**① 推理引擎管理（确认/添加推理引擎）**
+
+| 字段 | 值 |
+|---|---|
+| 引擎名称 | `vLLM-dsv4flash` |
+| 镜像（docker_image） | `ghcr.nju.edu.cn/anemll/dspark-vllm-gx10:0.1.1` |
+
+**② 模型实例管理（添加模型）**
+
+| 字段 | 值 |
+|---|---|
+| 模型名称 | `deepseek-v4-flash-vision-exp` |
+| 推理引擎 | `vLLM-dsv4flash` |
+| 模型类型 | 大语言模型（llm）+ 多模态（`vision_enabled=1`，tags `vision,cluster,dsv4`） |
+| 模型路径 | `/data/models/deepseek-ai/DeepSeek-V4-Flash-Vision-Exp`（157G，双机各一份） |
+| 部署模式 | **多节点集群（SSH 编排 2 节点）** |
+| 集群启动脚本（主节点本地路径） | `/opt/lexdata-ai/cluster-scripts/deepseek-v4-flash-vision-exp/start.sh` |
+| 集群停止脚本 | `/opt/lexdata-ai/cluster-scripts/deepseek-v4-flash-vision-exp/stop.sh` |
+| 健康检查 URL | `http://127.0.0.1:4110/health` |
+| 访问地址（用户浏览器可达） | `http://192.168.21.234:4110` |
+
+**③ 启动** → 平台状态 `running / healthy`，API：`http://192.168.21.234:4110/v1`
+（served 模型名 = `SERVED_MODEL_NAME=deepseek-v4-flash-vision-exp`，见 `.env.dspark`）
+
+> vLLM 专属参数（`MTP_NUM_TOKENS=6`、`LIMIT_MM_PER_PROMPT=image=8`、`MAX_MODEL_LEN=1048576`、
+> `DEFAULT_THINKING=max`、`GPU_MEMORY_UTILIZATION=0.835`）在 `.env.dspark` / `docker-compose.dspark.yml`
+> 内配置，平台侧通过 `start.sh` 包装脚本读取，**无需在页面重复填**。
+>
+> ⚠️ 集群模式下 `start.sh` 需平台注入 `HEAD_IP/WORKER_IP/WORKER_SSH_HOST/WORKER_SSH_PW` 环境变量，
+> 并依赖节点纳管配置的 worker SSH 凭据（脚本用 `sshpass` 以密码推送/执行 worker 端）。
+
 ## 📌 当前状态（2026-09-01 已成功运行）
 
 | 项目 | 状态 |
