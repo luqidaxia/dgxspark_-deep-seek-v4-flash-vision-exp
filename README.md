@@ -56,6 +56,18 @@ head (10.10.12.11 / 192.168.21.234)  ──── RoCE ────  worker (10.
 | `patches/` | 全部 hotfix，含 vision 关键件：`hotfix-dsv4-vision-exp.py`、`vision_exp/` |
 | `recipe/` · `scripts/` · `docs/` · `tests/` | vLLM overlay 与配套脚本文档 |
 
+## ⚠️ 踩坑速查（部署前必看）
+
+| # | 坑 | 现象 | 对策 |
+|---|---|---|---|
+| 1 | `LIMIT_MM_PER_PROMPT` 双引号被 env 解析吃掉 | vllm serve 报 `--limit-mm-per-prompt: Value {image:8} cannot be converted` 直接退出 | `.env.dspark` 用简写 `LIMIT_MM_PER_PROMPT=image=8`，**不要写 `{"image":8}`** |
+| 2 | head 显存不足 | `Free memory ... is less than desired GPU memory utilization`（Engine core init failed / OOM） | 释放 head 上占显存的进程（llama-server / qwen3 等）；保持 `GPU_MEMORY_UTILIZATION=0.835` 或下调 |
+| 3 | GB10 显存 `nvidia-smi` 显示 **Not Supported** | Memory-Usage 查不到显存 | 以 vLLM 启动日志为准（`119.63 GiB`）判断总 / 空闲显存 |
+| 4 | 镜像拉取需直连 NJU 镜像站 | 拉取失败 / 超时 | `ghcr.nju.edu.cn/anemll/dspark-vllm-gx10:0.1.1` 需直连；daemon 全局代理按需处理 |
+| 5 | 双机权重 / SSH 凭据 | worker 缺权重或免密失败 | 双机各放一份权重；`start.sh` 需平台注入 `HEAD_IP/WORKER_IP/WORKER_SSH_PW` |
+
+> 详细过程见 [DEPLOY-PLAN-VISION-EXP.md](./DEPLOY-PLAN-VISION-EXP.md) 第 8 节。
+
 ## 🚀 快速部署（回顾）
 
 ```bash
