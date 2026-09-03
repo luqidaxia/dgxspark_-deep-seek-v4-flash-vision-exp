@@ -10,7 +10,7 @@
 
 在 2× DGX Spark（GB10, Grace-Blackwell）上以 **TP=2 双机集群** 方式部署
 **DeepSeek-V4-Flash-Vision-Exp**（官方 vision 版本），并注册到 Lexdata-AI-Platform
-模型管理平台（http://192.168.21.234:8889/#model-manage），由平台统一管理启停与日志查看。
+模型管理平台（http://192.0.2.10:8889/#model-manage），由平台统一管理启停与日志查看。
 
 关键特性：
 
@@ -23,12 +23,12 @@
 
 | 项 | 值 |
 |---|---|
-| head 节点 | 10.10.12.11（对外 192.168.21.234） |
+| head 节点 | 10.10.12.11（对外 192.0.2.10） |
 | worker 节点 | 10.10.12.21（spark-cefb, root/Admin@9000） |
 | 模型镜像 | `ghcr.nju.edu.cn/anemll/dspark-vllm-gx10:0.1.1`（NJU 镜像，官方 pin `ghcr.io/anemll/...` 改写，digest 与官方一致） |
 | 模型权重 | `/data/models/deepseek-ai/DeepSeek-V4-Flash-Vision-Exp`（约 157G，双机已同步） |
 | HF commit pin | `86f746b36186f0e567729a5c06a8c918caba82a9` |
-| vLLM 端口 | 4110（head 对外 API：`http://192.168.21.234:4110/v1`） |
+| vLLM 端口 | 4110（head 对外 API：`http://192.0.2.10:4110/v1`） |
 | head→worker SSH | 免密已配置（官方 start 脚本硬性要求 `ssh -o BatchMode=yes`） |
 
 ## 3. 方案核心：官方配方 + 3 个本地适配点
@@ -114,7 +114,7 @@ volumes:
 | 端口 | 4110 |
 | 状态 | `running`（healthy，2026-09-01 确认） |
 | 健康检查 | `http://127.0.0.1:4110/health` → `healthy`（status_code 200） |
-| 访问地址 | `http://192.168.21.234:4110/v1` |
+| 访问地址 | `http://192.0.2.10:4110/v1` |
 | tags | `vision,cluster,dsv4`；`vision_enabled=1` |
 
 ## 7. 部署结果（2026-09-01 已成功运行）
@@ -123,7 +123,7 @@ volumes:
 - ✅ 用户在模型管理页点「启动」后，双机容器拉起，vLLM 加载 157G 权重成功
 - ✅ 双机 TP=2 分布式建立（`world_size=2 backend=nccl`，rank 0/1）
 - ✅ `:4110/health` → **healthy**，平台状态 **running**
-- ✅ 访问地址 `http://192.168.21.234:4110/v1` 可用（`vllm` 进程监听 4110）
+- ✅ 访问地址 `http://192.0.2.10:4110/v1` 可用（`vllm` 进程监听 4110）
 - ✅ 日志查看：平台日志页 / `logs.sh`（head + worker 双节点聚合）
 
 ## 8. 部署过程踩坑记录（重要）

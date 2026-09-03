@@ -18,14 +18,14 @@
 ## 🏗 架构概览
 
 ```
-head (10.10.12.11 / 192.168.21.234)  ──── RoCE ────  worker (10.10.12.21)
+head (10.10.12.11 / 192.0.2.10)  ──── RoCE ────  worker (10.10.12.21)
 └─ docker: dspark-vllm-gx10:0.1.1                     └─ docker: dspark-vllm-gx10:0.1.1
    TP rank 0, port 4110                                  TP rank 1
                      │
                      ▼
-   Lexdata-AI-Platform  (http://192.168.21.234:8889/#model-manage)
+   Lexdata-AI-Platform  (http://192.0.2.10:8889/#model-manage)
    · 模型 id=20 · engine vLLM-dsv4flash · cluster 模式
-   · API: http://192.168.21.234:4110/v1 · health: :4110/health
+   · API: http://192.0.2.10:4110/v1 · health: :4110/health
 ```
 
 ## ✨ 关键特性
@@ -93,7 +93,7 @@ docker compose -p dsv4-vision-exp --env-file .env.dspark -f docker-compose.dspar
 
 ## 🖥 在平台 `#model-manage` 加载（平台跑通经验）
 
-在 Lexdata-AI-Platform 模型管理页（`http://192.168.21.234:8889/#model-manage`）直接加载该模型（本次实际跑通方式）：
+在 Lexdata-AI-Platform 模型管理页（`http://192.0.2.10:8889/#model-manage`）直接加载该模型（本次实际跑通方式）：
 
 **① 推理引擎管理（确认/添加推理引擎）**
 
@@ -114,9 +114,9 @@ docker compose -p dsv4-vision-exp --env-file .env.dspark -f docker-compose.dspar
 | 集群启动脚本（主节点本地路径） | `/opt/lexdata-ai/cluster-scripts/deepseek-v4-flash-vision-exp/start.sh` |
 | 集群停止脚本 | `/opt/lexdata-ai/cluster-scripts/deepseek-v4-flash-vision-exp/stop.sh` |
 | 健康检查 URL | `http://127.0.0.1:4110/health` |
-| 访问地址（用户浏览器可达） | `http://192.168.21.234:4110` |
+| 访问地址（用户浏览器可达） | `http://192.0.2.10:4110` |
 
-**③ 启动** → 平台状态 `running / healthy`，API：`http://192.168.21.234:4110/v1`
+**③ 启动** → 平台状态 `running / healthy`，API：`http://192.0.2.10:4110/v1`
 （served 模型名 = `SERVED_MODEL_NAME=deepseek-v4-flash-vision-exp`，见 `.env.dspark`）
 
 > vLLM 专属参数（`MTP_NUM_TOKENS=6`、`LIMIT_MM_PER_PROMPT=image=8`、`MAX_MODEL_LEN=1048576`、
@@ -133,8 +133,8 @@ docker compose -p dsv4-vision-exp --env-file .env.dspark -f docker-compose.dspar
 | 权重 / 镜像 / 免密 / 双端校验 | ✅ 就绪 |
 | 平台注册（模型 id=20，端口 4110） | ✅ 完成 |
 | 模型启动 | ✅ **running**（双机 TP=2 拉起成功） |
-| 健康检查 | ✅ `http://192.168.21.234:4110/health` → healthy |
-| 访问地址 | ✅ `http://192.168.21.234:4110/v1`（vLLM 监听 4110） |
+| 健康检查 | ✅ `http://192.0.2.10:4110/health` → healthy |
+| 访问地址 | ✅ `http://192.0.2.10:4110/v1`（vLLM 监听 4110） |
 
 > 💡 部署过程踩坑（`LIMIT_MM_PER_PROMPT` 引号、head 显存不足）见
 > [DEPLOY-PLAN-VISION-EXP.md](./DEPLOY-PLAN-VISION-EXP.md) 第 8 节。
