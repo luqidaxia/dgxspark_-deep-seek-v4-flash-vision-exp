@@ -7,7 +7,7 @@ WORKER_SSH_HOST="${WORKER_SSH_HOST:-10.10.12.21}"
 SSH_USER="${WORKER_SSH_USER:-root}"
 SSH_PW="${WORKER_SSH_PW:-}"
 TAIL_N="${1:-60}"
-CONTAINER="dsv4-vision-exp-vllm-dspark-1"
+CONTAINER="dsv4-vision-exp-new-vllm-dspark-1"
 
 echo "############################################"
 echo "### HEAD 节点日志 (本机 ${CONTAINER}, 最近 ${TAIL_N} 行)"
