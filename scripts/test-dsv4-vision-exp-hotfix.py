@@ -14,11 +14,17 @@ from vision_exp.image_processor import (  # noqa: E402
     IMAGE,
     IMAGE_END,
     IMAGE_START,
+    IMAGE_TOKEN_ID,
     as_pil,
     build_image_block,
+    compress_pad_tokens,
     grid_tokens,
+    image_block_num_tokens,
     is_unregistered_router_bias,
     is_vision_exp_weight_name,
+    looks_like_chw,
+    salt_mm_image_hash,
+    token_routing_kind,
     vision_args_from_config,
 )
 
@@ -50,6 +56,7 @@ ENC_MARK = _mod.ENC_MARK
 ENC_ROLE_MARK = _mod.ENC_ROLE_MARK
 ENC_ROLE_PAIRED_MARK = _mod.ENC_ROLE_PAIRED_MARK
 ENC_ROLE_TOOL_MARK = _mod.ENC_ROLE_TOOL_MARK
+ENC_ROLE_QUOTE_MARK = _mod.ENC_ROLE_QUOTE_MARK
 MODEL_MARK = _mod.MODEL_MARK
 DSPARK_MARK = _mod.DSPARK_MARK
 
@@ -59,6 +66,40 @@ class VisionExpLayoutTest(unittest.TestCase):
         n_h, n_w, n_tok = grid_tokens(756, 756, 14, 3)
         self.assertEqual((n_h, n_w), (18, 18))
         self.assertLessEqual(n_tok, 384)
+
+    def test_issue172_40x19_block_lengths_are_122_plus_compress_pad(self):
+        n_h, n_w, base = grid_tokens(19 * 14, 40 * 14, 14, 3)
+        self.assertEqual((n_h, n_w, base), (7, 14, 122))
+        expected = {0: 125, 1: 124, 2: 123, 3: 122}
+        for start, ntok in expected.items():
+            self.assertEqual(compress_pad_tokens(start), 3 - start)
+            self.assertEqual(image_block_num_tokens(7, 14, start), ntok)
+            self.assertEqual(image_block_num_tokens(7, 14, start + 4), ntok)
+
+    def test_issue172_encoder_cache_hash_includes_block_length(self):
+        a = salt_mm_image_hash("deadbeef", 125)
+        b = salt_mm_image_hash("deadbeef", 124)
+        self.assertNotEqual(a, b)
+        self.assertTrue(a.endswith("vlexp-ntok125"))
+        self.assertTrue(b.endswith("vlexp-ntok124"))
+
+    def test_issue172_processor_salts_encoder_cache_hash(self):
+        text = (ROOT / "patches" / "vision_exp" / "processor.py").read_text()
+        self.assertIn("salt_mm_image_hash", text)
+        self.assertIn("_salt_image_mm_hashes", text)
+        self.assertIn("mm_info._replace(hashes=salted)", text)
+
+    def test_issue172_embed_rejects_placeholder_mismatch(self):
+        text = (ROOT / "patches" / "vision_exp" / "apply.py").read_text()
+        self.assertIn("placeholder/embedding mismatch", text)
+        self.assertIn("issue #172", text)
+
+    @unittest.skipUnless(HAS_TORCH, "torch not installed on this host")
+    def test_issue172_build_image_block_matches_num_tokens_helper(self):
+        for start in range(8):
+            types, perm = build_image_block(7, 14, start_pos=start)
+            self.assertEqual(int(types.numel()), image_block_num_tokens(7, 14, start))
+            self.assertEqual(int(perm.numel()), 7 * 14)
 
     @unittest.skipUnless(HAS_TORCH, "torch not installed on this host")
     def test_build_image_block_starts_and_ends(self):
@@ -100,10 +141,34 @@ class VisionExpLayoutTest(unittest.TestCase):
             return
         hwc = np.zeros((6, 4, 3), dtype="uint8")
         hwc[..., 0] = 11
+        self.assertEqual(as_pil(hwc).size, (4, 6))
         self.assertEqual(as_pil(hwc).getpixel((0, 0)), (11, 0, 0))
         chw = np.zeros((3, 6, 4), dtype="uint8")
         chw[1] = 22
-        self.assertEqual(as_pil(chw).getpixel((0, 0)), (0, 22, 0))
+        got_chw = as_pil(chw)
+        self.assertEqual(got_chw.size, (4, 6))
+        self.assertEqual(got_chw.getpixel((0, 0)), (0, 22, 0))
+        chw_w3 = np.zeros((3, 8, 3), dtype="uint8")
+        chw_w3[1] = 22
+        self.assertEqual(as_pil(chw_w3).size, (3, 8))
+        self.assertEqual(as_pil(chw_w3).getpixel((0, 0)), (0, 22, 0))
+        chw_wide = np.zeros((3, 8, 5), dtype="uint8")
+        chw_wide[1] = 22
+        self.assertEqual(as_pil(chw_wide).getpixel((0, 0)), (0, 22, 0))
+
+    def test_looks_like_chw_width_in_channel_set(self):
+        self.assertTrue(looks_like_chw((3, 6, 4)))
+        self.assertTrue(looks_like_chw((3, 8, 3)))
+        self.assertTrue(looks_like_chw((3, 8, 1)))
+        self.assertTrue(looks_like_chw((3, 8, 5)))
+        self.assertTrue(looks_like_chw((3, 8, 8)))
+        self.assertTrue(looks_like_chw((4, 100, 200)))
+        self.assertTrue(looks_like_chw((1, 100, 200)))
+        self.assertFalse(looks_like_chw((8, 5, 3)))
+        self.assertFalse(looks_like_chw((6, 4, 3)))
+        self.assertFalse(looks_like_chw((4, 100, 3)))
+        self.assertFalse(looks_like_chw((1, 100, 3)))
+        self.assertFalse(looks_like_chw((6, 4)))
 
     def test_vision_weight_names_bypass_stacked_w1(self):
         self.assertTrue(is_vision_exp_weight_name("aligner.w1.bias"))
@@ -174,6 +239,39 @@ class VisionExpLayoutTest(unittest.TestCase):
         self.assertIn("multimodal_embeddings", text)
         self.assertIn("_merge_multimodal_embeddings", text)
 
+    def test_issue175_placeholder_id_is_in_vocab_tail(self):
+        self.assertEqual(IMAGE_TOKEN_ID, 129264)
+        proc = (ROOT / "patches" / "vision_exp" / "processor.py").read_text()
+        self.assertIn("return IMAGE_TOKEN_ID", proc)
+
+    def test_issue175_token_routing_kind_splits_placeholder_rows(self):
+        img = IMAGE_TOKEN_ID
+        self.assertEqual(token_routing_kind(None), "text")
+        self.assertEqual(token_routing_kind([]), "text")
+        self.assertEqual(token_routing_kind([1, 2, 3]), "text")
+        self.assertEqual(token_routing_kind([img, img]), "image")
+        self.assertEqual(token_routing_kind([1, img, 2]), "mixed")
+
+    @unittest.skipUnless(HAS_TORCH, "torch not installed on this host")
+    def test_issue175_token_routing_kind_accepts_tensors(self):
+        import torch
+
+        img = IMAGE_TOKEN_ID
+        self.assertEqual(token_routing_kind(torch.tensor([7, 8])), "text")
+        self.assertEqual(token_routing_kind(torch.tensor([img, img])), "image")
+        self.assertEqual(token_routing_kind(torch.tensor([[1, img]])), "mixed")
+
+    def test_issue175_overlay_routes_image_rows_with_bias_vl(self):
+        text = (ROOT / "patches" / "vision_exp" / "apply.py").read_text()
+        self.assertIn("def fused_topk_bias_split_vl", text)
+        self.assertIn("def _wrap_router_compute_routing", text)
+        self.assertIn("_wrap_router_compute_routing(router, self.gate)", text)
+        self.assertIn("e_score_correction_bias_vl", text)
+        self.assertIn('kind == "image"', text)
+        self.assertIn("return _call(hidden_states, gating_output, vl, None, None)", text)
+        self.assertIn("nvidia_mod.fused_topk_bias = _split_ftb", text)
+        self.assertIn("is_current_stream_capturing", text)
+
 
 class VisionExpHotfixTextTest(unittest.TestCase):
     def test_model_inject_is_idempotent(self):
@@ -213,6 +311,7 @@ def _process_image_blocks(blocks):
         self.assertEqual(status, "applied")
         self.assertIn(ENC_MARK, updated)
         self.assertIn(ENC_ROLE_MARK, updated)
+        self.assertIn(ENC_ROLE_QUOTE_MARK, updated)
         skipped, status2 = patch_encoding_text(updated)
         self.assertEqual(status2, "skipped")
         self.assertEqual(updated, skipped)
@@ -256,14 +355,18 @@ def _process_image_blocks(blocks):
         ns["_validate_no_image_sp_tokens"](
             {"role": "assistant", "content": "example: <image> in markdown"}
         )
-        with self.assertRaises(ValueError) as paired_err:
-            ns["_validate_no_image_sp_tokens"](
-                {
-                    "role": "system",
-                    "content": "load <image>/tmp/shot.png</image> now",
-                }
-            )
-        self.assertIn("user messages only", str(paired_err.exception))
+        ns["_validate_no_image_sp_tokens"](
+            {
+                "role": "system",
+                "content": "load <image>/tmp/shot.png</image> now",
+            }
+        )
+        ns["_validate_no_image_sp_tokens"](
+            {
+                "role": "assistant",
+                "content": "yes — OpenAI `image_url` parts and `<image>path</image>` tags",
+            }
+        )
         ns["_validate_no_image_sp_tokens"](
             {
                 "role": "tool",
@@ -361,12 +464,19 @@ def _validate_no_image_sp_tokens(msg):
         self.assertEqual(status2, "applied")
         self.assertIn(ENC_ROLE_PAIRED_MARK, upgraded)
         self.assertIn(ENC_ROLE_TOOL_MARK, upgraded)
+        self.assertIn(ENC_ROLE_QUOTE_MARK, upgraded)
         ns: dict = {}
         exec(compile(upgraded, "encoding.py", "exec"), ns)
         ns["_validate_no_image_sp_tokens"](
             {
                 "role": "system",
                 "content": "Markdown images look like <image> tags.",
+            }
+        )
+        ns["_validate_no_image_sp_tokens"](
+            {
+                "role": "assistant",
+                "content": "yes — `<image>path</image>` tags",
             }
         )
 
@@ -435,6 +545,7 @@ def _validate_no_image_sp_tokens(msg):
         upgraded, status2 = patch_encoding_text(stale)
         self.assertEqual(status2, "applied")
         self.assertIn(ENC_ROLE_TOOL_MARK, upgraded)
+        self.assertIn(ENC_ROLE_QUOTE_MARK, upgraded)
         skipped, status3 = patch_encoding_text(upgraded)
         self.assertEqual(status3, "skipped")
         self.assertEqual(upgraded, skipped)
@@ -443,9 +554,105 @@ def _validate_no_image_sp_tokens(msg):
         ns["_validate_no_image_sp_tokens"](
             {"role": "tool", "content": "mentions " + ns["IMAGE_PLACEHOLDER"]}
         )
+        ns["_validate_no_image_sp_tokens"](
+            {
+                "role": "assistant",
+                "content": "yes — OpenAI `image_url` parts and `<image>path</image>` tags",
+            }
+        )
         with self.assertRaises(ValueError):
             ns["_validate_no_image_sp_tokens"](
                 {"role": "assistant", "content": ns["IMAGE_PLACEHOLDER"]}
+            )
+
+    def test_encoding_role_check_upgrades_quoted_paired_tags(self):
+        src = '''
+IMAGE_PLACEHOLDER = "<｜deepseek_image｜>"
+
+def _validate_no_image_sp_tokens(msg):
+    content = msg.get("content")
+    if isinstance(content, str) and IMAGE_PLACEHOLDER in content:
+        raise ValueError("bad")
+    reasoning_content = msg.get("reasoning_content")
+    if isinstance(reasoning_content, str) and IMAGE_PLACEHOLDER in reasoning_content:
+        raise ValueError("bad-reason")
+
+def _process_image_blocks(blocks):
+    text = blocks[0].get("text") or ""
+    if IMAGE_PLACEHOLDER in text:
+        raise ValueError("bad-text")
+'''
+        first, status = patch_encoding_text(src)
+        self.assertEqual(status, "applied")
+        stale_inject = f'''
+{ENC_ROLE_MARK}
+{ENC_ROLE_PAIRED_MARK}
+{ENC_ROLE_TOOL_MARK}
+def _dspark_vision_text_has_image(text: str) -> bool:
+    if IMAGE_PLACEHOLDER in text:
+        return True
+    needle, close = "<image>", "</image>"
+    start = 0
+    while True:
+        i = text.find(needle, start)
+        if i < 0:
+            return False
+        if text.find(close, i + len(needle)) >= 0:
+            return True
+        start = i + len(needle)
+
+
+def _dspark_vision_value_has_image(value, scan_text: bool = True) -> bool:
+    if isinstance(value, str):
+        return bool(scan_text) and _dspark_vision_text_has_image(value)
+    return False
+
+
+def _validate_no_image_sp_tokens(msg):
+    role = msg.get("role")
+    if role in ("user", "developer"):
+        return
+    scan_text = role not in ("tool", "function")
+    if _dspark_vision_value_has_image(msg.get("content"), scan_text):
+        raise ValueError(
+            "Images are supported in user messages only: "
+            "images in " + repr(role) + " messages return a 400 error."
+        )
+'''
+        stale = first[: first.rfind(ENC_ROLE_MARK)] + stale_inject
+        self.assertIn(ENC_ROLE_TOOL_MARK, stale)
+        self.assertNotIn(ENC_ROLE_QUOTE_MARK, stale)
+        ns_stale: dict = {}
+        exec(compile(stale, "encoding.py", "exec"), ns_stale)
+        quoted = "yes — OpenAI `image_url` parts and `<image>path</image>` tags"
+        with self.assertRaises(ValueError):
+            ns_stale["_validate_no_image_sp_tokens"](
+                {"role": "assistant", "content": quoted}
+            )
+        upgraded, status2 = patch_encoding_text(stale)
+        self.assertEqual(status2, "applied")
+        self.assertIn(ENC_ROLE_QUOTE_MARK, upgraded)
+        skipped, status3 = patch_encoding_text(upgraded)
+        self.assertEqual(status3, "skipped")
+        self.assertEqual(upgraded, skipped)
+        ns: dict = {}
+        exec(compile(upgraded, "encoding.py", "exec"), ns)
+        ns["_validate_no_image_sp_tokens"]({"role": "assistant", "content": quoted})
+        ns["_validate_no_image_sp_tokens"](
+            {"role": "system", "content": "load <image>/tmp/shot.png</image> now"}
+        )
+        with self.assertRaises(ValueError):
+            ns["_validate_no_image_sp_tokens"](
+                {"role": "assistant", "content": ns["IMAGE_PLACEHOLDER"]}
+            )
+        with self.assertRaises(ValueError):
+            ns["_validate_no_image_sp_tokens"](
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": "http://x/y.png"}}
+                    ],
+                }
             )
 
     def test_dspark_remaps_bias_vl_before_lookup(self):
