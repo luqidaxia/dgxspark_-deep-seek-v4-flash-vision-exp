@@ -126,6 +126,25 @@ docker compose -p dsv4-vision-exp --env-file .env.dspark -f docker-compose.dspar
 > ⚠️ 集群模式下 `start.sh` 需平台注入 `HEAD_IP/WORKER_IP/WORKER_SSH_HOST/WORKER_SSH_PW` 环境变量，
 > 并依赖节点纳管配置的 worker SSH 凭据（脚本用 `sshpass` 以密码推送/执行 worker 端）。
 
+## 📰 更新记录
+
+### 2026-09-05：同步上游 PR#226（92 commits）
+
+- **同步上游**：本地从 PR#170（`de230b4`，08-31）追上 MiaAI-Lab 上游 `main`（`b1b8dfb` = PR#226，09-05），合入 92 个提交、110 文件（+34578 / −1601）。
+- **新增 opt-in hotfix（默认全关，需显式开启后才生效）**：
+  - `DSPARK_ENABLE_MXFP4_INDEXER_CACHE=1`：MXFP4 indexer K cache，indexer K 读取带宽减半（需配合 `DSPARK_ENABLE_DEEPGEMM_SM121_ALIAS=1`）
+  - `NCCL_GIN_ENABLE`：GPU 发起网络，NCCL comm-init 约 2min → 13s
+  - `DSPARK_ENABLE_ROPE_SWA_FIX=1`：移植 vllm#54815，sparse-SWA 层改用 plain RoPE
+  - `DSPARK_ENABLE_DSPARK_SWA_PREFIX=1`：修复 prefix cache 命中时 draft 窗口未回填、重复 prompt 退化为截断响应
+  - `DSPARK_ENABLE_DSML_RECOVERY=1`：移植 vllm#52645，修复 DSML tool call 泄露进正文
+- **vision-exp 补丁链更新**：image token 走 `bias_vl`（#175）、encoder 缓存加 image block 盐（#172）、引号 `<image>` 当正文（#181）、healthcheck 探 `VLLM_HOST`（#185）等。
+- **`.env.dspark` 停止跟踪**：移出版本控制（`.gitignore` 忽略），本地文件保留；以后以 `.env.dspark.example` 为源，不再提交生产 env。
+- **合并 gitee 3 个文档提交**：README 踩坑速查表、`#model-manage` 加载实操步骤、公开文档内网 IP 脱敏。
+
+> ⚠️ 以上均为代码 / 配置更新，**现网 running 容器（镜像 0.1.1）未重建**；新 hotfix 需显式开启对应 env 开关并 `./stop` / `./start` 重建双机后才生效。
+
+---
+
 ## 📌 当前状态（2026-09-01 已成功运行）
 
 | 项目 | 状态 |
