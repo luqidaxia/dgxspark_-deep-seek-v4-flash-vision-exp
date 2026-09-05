@@ -1,0 +1,32 @@
+.env.dspark
+.env.dspark.bak-*
+.env.dspark.works
+.env
+.secrets/
+*.pem
+*.key
+id_*
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
+nohup.out
+*.egg-info/
+vllm-cache/
+/models/
+bench-results/
+benchmarks/
+RESULTS.md
+scripts/agent_sanity_bench.py
+scripts/capture_runtime.sh
+start-deepseek-v4-flash-dspark-gb10.sh
+
+# local uv envs / package build junk
+plugins/dspark_vision_mcp/.venv/
+plugins/dspark_vision_mcp/build/
+plugins/dspark_vision_mcp/**/__pycache__/
+
+# 构建 / 截图等运行时产物
+/image.png
+*.png
+!docs/*.png
